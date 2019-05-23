@@ -34,11 +34,20 @@ function find(db, filter, sort) {
     })
 }
 
-function upsert(db, filter, obj) {
+function update(db, filter, obj) {
     return new Promise((res, rej) => {
-        db.update(filter, obj, { upsert: true}, (err, num, upsert) => {
+        db.update(filter, obj, {}, (err, num) => {
             if (err) rej(err)
-            else res(upsert)
+            else res(num)
+        })
+    })
+}
+
+function insert(db, obj) {
+    return new Promise((res, rej) => {
+        db.insert(obj, (err, obj) => {
+            if (err) rej(err)
+            else res(obj)
         })
     })
 }
@@ -52,19 +61,20 @@ async function loadSongStats() {
     console.log('Songs fetched')
 
     const load = async () => {
-        await Promise.all(
-            songs.map(async(song) => {
-                let songstats = await find(stats.songs, { id: song.id}, {})
-                let n = songstats.length
-                let songStat = {}
-                songStat.id = song.id
-                songStat.title = song.title
-                songStat.artist = song.artist
-                songStat.plays = n + 1
-                await upsert(stats.songs, { id: songStat.id}, songStat)
-                console.log('Upsert ' + songStat.id)
-            })
-        )
+        await asyncForEach(songs, async (song) => {
+            let songstats = await find(stats.songs, { id: song.id}, {})
+            let n = songstats.length
+            let songStat = {}
+            songStat.id = song.id
+            songStat.title = song.title
+            songStat.artist = song.artist
+            songStat.plays = n + 1
+            if (n > 1) {
+                await update(stats.songs, { id: songStat.id }, songStat)
+            } else {
+                await insert(stats.songs, songStat)
+            }
+        })
     }
     
     await load()
@@ -77,17 +87,18 @@ async function loadArtistStats() {
     console.log('Songs fetched')
 
     const load = async () => {
-        await Promise.all(
-            songs.map(async(song) => {
-                let artiststats = await find(stats.artists, { artist: song.artist}, {})
-                let n = artiststats.length
-                let stat = {}
-                stat.artist = song.artist
-                stat.plays = n + 1
-                await upsert(stats.artists, { artist: stat.artist}, stat)
-                console.log('Upsert ' + stat.artist)
-            })
-        )
+        await asyncForEach(songs, async (song) => {
+            let artiststats = await find(stats.artists, { artist: song.artist}, {})
+            let n = artiststats.length
+            let stat = {}
+            stat.artist = song.artist
+            stat.plays = n + 1
+            if (n > 1) {
+                await update(stats.artists, { artist: stat.artist}, stat)
+            } else {
+                await insert(stats.artists, stat)
+            }
+        })
     }
     
     await load()
@@ -126,7 +137,7 @@ function getDuplicadas() {
 async function getTopArtists() {
     await loadArtistStats()
     console.log('Artist stats loaded 2')
-    let artists = await find(stats.artists, {}, { plays: -1})
+    let artists = await find(stats.artists, {}, { plays: -1, artist: 1})
     console.log('Artist stats fetched')
 
     artists.forEach(artist => {
@@ -137,7 +148,7 @@ async function getTopArtists() {
 async function getTopSongs() {
     await loadSongStats()
     console.log('Song stats loaded 2')
-    let songs = await find(stats.songs, {}, { plays: -1})
+    let songs = await find(stats.songs, {}, { plays: -1, artist: 1})
     console.log('Song stats fetched')
 
     console.log(songs.length)
