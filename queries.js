@@ -52,18 +52,19 @@ async function loadSongStats() {
     console.log('Songs fetched')
 
     const load = async () => {
-        await asyncForEach(songs, async (song) => {
-            let songstats = await find(stats.songs, { id: song.id}, {})
-            let n = songstats.length
-            let songStat = {}
-            songStat.id = song.id
-            songStat.title = song.title
-            songStat.artist = song.artist
-            songStat.plays = n + 1
-            await upsert(stats.songs, { id: songStat.id}, songStat)
-            console.log('Upsert ' + songStat.id)
-        })
-        console.log('Song stats loaded')
+        await Promise.all(
+            songs.map(async(song) => {
+                let songstats = await find(stats.songs, { id: song.id}, {})
+                let n = songstats.length
+                let songStat = {}
+                songStat.id = song.id
+                songStat.title = song.title
+                songStat.artist = song.artist
+                songStat.plays = n + 1
+                await upsert(stats.songs, { id: songStat.id}, songStat)
+                console.log('Upsert ' + songStat.id)
+            })
+        )
     }
     
     await load()
@@ -76,16 +77,17 @@ async function loadArtistStats() {
     console.log('Songs fetched')
 
     const load = async () => {
-        await asyncForEach(songs, async (song) => {
-            let artiststats = await find(stats.artists, { artist: song.artist}, {})
-            let n = artiststats.length
-            let stat = {}
-            stat.artist = song.artist
-            stat.plays = n + 1
-            await upsert(stats.artists, { artist: stat.artist}, stat)
-            console.log('Upsert ' + stat.artist)
-        })
-        console.log('Artist stats loaded')
+        await Promise.all(
+            songs.map(async(song) => {
+                let artiststats = await find(stats.artists, { artist: song.artist}, {})
+                let n = artiststats.length
+                let stat = {}
+                stat.artist = song.artist
+                stat.plays = n + 1
+                await upsert(stats.artists, { artist: stat.artist}, stat)
+                console.log('Upsert ' + stat.artist)
+            })
+        )
     }
     
     await load()
