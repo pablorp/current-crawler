@@ -10,10 +10,28 @@
   "license": "ISC",
   "dependencies": {
     "cheerio": "^1.0.0-rc.3",
-    "fs": "0.0.1-security",
+    "dotenv": "^8.0.0",
     "moment-timezone": "^0.5.25",
-    "nedb": "^1.8.0",
+    "mongodb": "^3.2.6",
     "request": "^2.88.0",
     "winston": "^3.2.1"
+  },
+  "prettier": {
+    "arrowParens": "avoid",
+    "bracketSpacing": true,
+    "htmlWhitespaceSensitivity": "css",
+    "insertPragma": false,
+    "jsxBracketSameLine": false,
+    "jsxSingleQuote": false,
+    "parser": "flow",
+    "printWidth": 80,
+    "proseWrap": "preserve",
+    "quoteProps": "as-needed",
+    "requirePragma": false,
+    "semi": false,
+    "singleQuote": true,
+    "tabWidth": 4,
+    "trailingComma": "none",
+    "useTabs": false
   }
 }

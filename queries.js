@@ -1,173 +1,108 @@
 const request = require('request')
 const cheerio = require('cheerio')
-const Datastore = require('nedb')
 const moment = require('moment-timezone')
+const mongo = require('mongodb').MongoClient
+var ObjectId = require('mongodb').ObjectID
+require('dotenv').config()
 
-const db = new Datastore({ filename: 'songs.db', autoload: true })
-const stats = {}
-stats.artists = new Datastore({ filename: 'stats-artists.db', autoload: true })
-stats.songs = new Datastore({ filename: 'stats-songs.db', autoload: true })
+let db = null
+let client = null
+let col = null
 
 //---------------------- DB UTILS ----------------------
 
 async function asyncForEach(array, callback) {
     for (let index = 0; index < array.length; index++) {
-        await callback(array[index], index, array);
+        await callback(array[index], index, array)
     }
-}
-
-function resetDB(db) {
-    return new Promise((res, rej) => {
-        db.remove({}, { multi: true }, function (err, numRemoved) {
-            if (err) rej(err)
-            else res(numRemoved)
-        });
-    })
-}
-
-function find(db, filter, sort) {
-    return new Promise((res, rej) => {
-        db.find(filter).sort(sort).exec(function (err, docs) {
-            if (err) rej(err)
-            else res(docs)
-        })
-    })
-}
-
-function update(db, filter, obj) {
-    return new Promise((res, rej) => {
-        db.update(filter, obj, {}, (err, num) => {
-            if (err) rej(err)
-            else res(num)
-        })
-    })
-}
-
-function insert(db, obj) {
-    return new Promise((res, rej) => {
-        db.insert(obj, (err, obj) => {
-            if (err) rej(err)
-            else res(obj)
-        })
-    })
-}
-
-//---------------------- LOAD STATS ----------------------
-
-async function loadSongStats() {
-    await resetDB(stats.songs)
-    console.log('Song stats reset')
-    let songs = await find(db, {}, { date: 1 })
-    console.log('Songs fetched')
-
-    const load = async () => {
-        await asyncForEach(songs, async (song) => {
-            let songstats = await find(stats.songs, { id: song.id}, {})
-            let n = songstats.length
-            let songStat = {}
-            songStat.id = song.id
-            songStat.title = song.title
-            songStat.artist = song.artist
-            songStat.plays = n + 1
-            if (n > 1) {
-                await update(stats.songs, { id: songStat.id }, songStat)
-            } else {
-                await insert(stats.songs, songStat)
-            }
-        })
-    }
-    
-    await load()
-}
-
-async function loadArtistStats() {
-    await resetDB(stats.artists)
-    console.log('Artist stats reset')
-    let songs = await find(db, {}, { date: 1 })
-    console.log('Songs fetched')
-
-    const load = async () => {
-        await asyncForEach(songs, async (song) => {
-            let artiststats = await find(stats.artists, { artist: song.artist}, {})
-            let n = artiststats.length
-            let stat = {}
-            stat.artist = song.artist
-            stat.plays = n + 1
-            if (n > 1) {
-                await update(stats.artists, { artist: stat.artist}, stat)
-            } else {
-                await insert(stats.artists, stat)
-            }
-        })
-    }
-    
-    await load()
 }
 
 //---------------------- OPTIONS ----------------------
 
-
-function getUltimas() {
-    db.find({}).sort({ date: 1 }).exec(function (err, docs) {
-        docs.forEach(song => {
-            console.log(`${song.timestamp} - ${song.id} - ${song.title} - ${song.artist} - ${song.dateInsert}`)
-        });
-    });
+async function getUltimas(limit) {
+    try {
+        let items = await col
+            .find({})
+            .limit(limit)
+            .sort({ date: -1 })
+            .toArray()
+        items.sort((a, b) => {
+            return a.date - b.date
+        })
+        items.forEach(song => {
+            console.log(`${song.timestamp} - ${song.title} - ${song.artist} - ${song.dateInsert}`)
+        })
+    } catch (error) {
+        console.log(error)
+    }
 }
 
-function getDuplicadas() {
-    let _map = new Map()
-    db.find({}).exec(function (err, docs) {
-        docs.forEach(song => {
-            if (_map.get(song.id)) {
-                let n = _map.get(song.id)
-                _map.set(song.id, n + 1)
-            } else {
-                _map.set(song.id, 1)
-            }
-        });
+async function getTopArtists(limit) {
+    let options = [{ $group: { _id: '$artist', total: { $sum: 1 } } }, { $sort: { total: -1 } }]
 
-        for (const [key, value] of _map.entries()) {
-            if (value > 1)
-                console.log(key, value);
-        }
-    });
+    try {
+        let items = await col
+            .aggregate(options)
+            .limit(limit)
+            .toArray()
+        items.sort((a, b) => {
+            return a.total - b.total
+        })
+        items.forEach(song => {
+            console.log(`${song._id} - ${song.total}`)
+        })
+    } catch (err) {
+        console.log(err)
+    }
 }
 
-async function getTopArtists() {
-    await loadArtistStats()
-    console.log('Artist stats loaded 2')
-    let artists = await find(stats.artists, {}, { plays: -1, artist: 1})
-    console.log('Artist stats fetched')
+async function getTopSongs(limit) {
+    let options = [
+        { $group: { _id: { id: '$id', title: '$title', artist: '$artist' }, total: { $sum: 1 } } },
+        { $sort: { total: -1 } }
+    ]
 
-    artists.forEach(artist => {
-        console.log(`${artist.artist} - ${artist.plays}`)
+    try {
+        let items = await col
+            .aggregate(options)
+            .limit(limit)
+            .toArray()
+        items.sort((a, b) => {
+            return a.total - b.total
+        })
+        items.forEach(song => {
+            console.log(`${song._id.title} - ${song._id.artist} - ${song.total}`)
+        })
+    } catch (err) {
+        console.log(err)
+    }
+}
+
+async function initDB() {
+    client = await mongo.connect(process.env.DATABASE_URL, {
+        useNewUrlParser: true
     })
+    db = client.db('current')
+    col = db.collection('songs')
+    console.log('Conectado a BD')
 }
 
-async function getTopSongs() {
-    await loadSongStats()
-    console.log('Song stats loaded 2')
-    let songs = await find(stats.songs, {}, { plays: -1, artist: 1})
-    console.log('Song stats fetched')
+async function main() {
+    await initDB()
 
-    console.log(songs.length)
+    let option = process.argv[2]
+    let limit = process.argv[3] ? Number(process.argv[3]) : 0
 
-    songs.forEach(song => {
-        console.log(`${song.title} - ${song.artist} - ${song.plays}`)
-    })
+    if (option == '-l') {
+        await getUltimas(limit)
+    } else if (option == '-a') {
+        await getTopArtists(limit)
+    } else if (option == '-s') {
+        await getTopSongs(limit)
+    } else {
+        console.log('No option selected')
+    }
+    client.close()
 }
 
-let option = process.argv[2]
-
-if (option == 'last') {
-    getUltimas()
-} else if (option == 'artists') {
-    getTopArtists()
-} else if (option == 'songs') {
-    getTopSongs()
-} else if (option == 'dupes') {
-    getDuplicadas()
-} else {
-    console.log('No option selected')
-}
+main()
